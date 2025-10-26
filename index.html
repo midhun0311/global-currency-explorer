@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Currency Explorer v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
+        .panel { background: rgba(30, 41, 59, 0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.5); }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .skeleton { background-color: rgba(51, 65, 85, 0.8); animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .favorite-star { transition: color 0.2s; }
+        .favorite-star.active { color: #facc15; } .favorite-star:not(.active) { color: #4b5563; }
+        .ticker-wrap { overflow: hidden; }
+        .ticker-move { display: inline-block; white-space: nowrap; animation: ticker 40s linear infinite; will-change: transform; }
+        @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .custom-dropdown-list { display: none; } .custom-dropdown:focus-within .custom-dropdown-list { display: block; }
+        .quick-convert-input { display: none; } .quick-convert-item:hover .quick-convert-input { display: block; }
+        .quick-convert-item:hover .quick-convert-rate { display: none; }
+    </style>
+</head>
+<body class="text-slate-200">
+
+    <!-- Ticker -->
+    <div class="ticker-wrap w-full bg-slate-900/50 py-2 border-b border-slate-700">
+        <div id="ticker" class="ticker-move"></div>
+    </div>
+
+    <div class="container mx-auto p-4 lg:p-8 max-w-7xl">
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-white">Global Currency Explorer</h1>
+            <p class="text-slate-400">Live rates, historical trends, and watchlist.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+            
+            <div class="lg:col-span-2 space-y-8">
+                <!-- Converter Panel -->
+                <div class="panel p-6 rounded-2xl">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Convert</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="amount" class="block text-sm font-medium text-slate-400 mb-1">Amount</label>
+                            <input type="text" id="amount" value="1,000" class="w-full bg-slate-900/70 border-2 border-slate-700 rounded-lg p-3 text-2xl font-semibold focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="w-full custom-dropdown" id="fromDropdownWrapper"></div>
+                            <button id="swapButton" class="mt-6 p-3 bg-slate-700 hover:bg-cyan-600 rounded-full transition-transform transform hover:rotate-180 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                            </button>
+                            <div class="w-full custom-dropdown" id="toDropdownWrapper"></div>
+                        </div>
+                    </div>
+                    <div id="result" class="mt-6 text-center bg-slate-900/70 p-4 rounded-lg flex flex-col items-center justify-center min-h-[92px]">
+                        <p id="resultText" class="text-3xl font-bold text-cyan-400 h-9 skeleton rounded-md w-full"></p>
+                        <p id="rateInfo" class="text-slate-400 text-sm mt-1 h-5 skeleton rounded-md w-4/5"></p>
+                    </div>
+                </div>
+
+                <!-- Favorites Watchlist -->
+                <div class="panel p-6 rounded-2xl fade-in">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-white">Watchlist</h2>
+                        <button id="editFavoritesBtn" class="text-sm text-slate-400 hover:text-white">Manage</button>
+                    </div>
+                    <div id="favoritesContainer" class="space-y-3">
+                         <div class="h-6 w-full skeleton rounded-md mb-2"></div>
+                         <div class="h-6 w-full skeleton rounded-md mb-2"></div>
+                         <div class="h-6 w-5/6 skeleton rounded-md"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-3 panel rounded-2xl p-6 fade-in">
+                <h2 class="text-xl font-semibold text-white mb-4">Historical Trend</h2>
+                <p id="chartTitle" class="text-sm text-slate-400 mb-4">USD to EUR - Last 30 Days</p>
+                <div class="h-[calc(100%-4rem)]"><canvas id="historicalChart"></canvas></div>
+                 <p id="lastUpdated" class="text-center text-slate-500 text-xs mt-4"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Favorites Modal -->
+    <div id="favoritesModal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 hidden fade-in">
+        <div class="panel w-full max-w-md rounded-2xl">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Manage Watchlist</h2>
+                    <button id="closeFavoritesModal" class="text-2xl hover:text-cyan-400 transition-colors">&times;</button>
+                </div>
+                <input type="text" id="favoritesSearch" class="w-full bg-slate-900/70 border-2 border-slate-700 rounded-lg p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-cyan-500" placeholder="Search currencies...">
+                <div id="favoritesList" class="max-h-96 overflow-y-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DOMElements = {
+            amountInput: document.getElementById('amount'),
+            fromDropdownWrapper: document.getElementById('fromDropdownWrapper'),
+            toDropdownWrapper: document.getElementById('toDropdownWrapper'),
+            swapButton: document.getElementById('swapButton'),
+            resultText: document.getElementById('resultText'),
+            rateInfo: document.getElementById('rateInfo'),
+            chartTitle: document.getElementById('chartTitle'),
+            lastUpdated: document.getElementById('lastUpdated'),
+            historicalChartCanvas: document.getElementById('historicalChart'),
+            favoritesContainer: document.getElementById('favoritesContainer'),
+            editFavoritesBtn: document.getElementById('editFavoritesBtn'),
+            favoritesModal: document.getElementById('favoritesModal'),
+            closeFavoritesModal: document.getElementById('closeFavoritesModal'),
+            favoritesSearch: document.getElementById('favoritesSearch'),
+            favoritesList: document.getElementById('favoritesList'),
+            ticker: document.getElementById('ticker')
+        };
+        
+        let state = {
+            currencyRates: {},
+            currencyMeta: {},
+            historicalChart: null,
+            favorites: JSON.parse(localStorage.getItem('currencyFavorites_v2')) || ['EUR', 'GBP', 'JPY', 'CAD', 'AUD'],
+            fromCurrency: 'USD',
+            toCurrency: 'EUR'
+        };
+
+        async function fetchWithRobustErrorHandling(url) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                const errorText = await response.text();
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorJson.error || errorText} for URL: ${url}`);
+                } catch (e) {
+                     throw new Error(`HTTP error! status: ${response.status}, message: ${errorText} for URL: ${url}`);
+                }
+            }
+            return response.json();
+        }
+
+
+        async function fetchInitialData() {
+            try {
+                const [ratesData, codesData] = await Promise.all([
+                    fetchWithRobustErrorHandling('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json').catch(e => { console.error("Rates API failed:", e); return null; }),
+                    fetchWithRobustErrorHandling('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies.json').catch(e => { console.error("Codes API failed:", e); return null; })
+                ]);
+                
+                if (!ratesData || !codesData) throw new Error('Critical data (rates or codes) failed to load.');
+
+                state.currencyRates = ratesData.usd;
+                state.currencyRates['usd'] = 1;
+
+                Object.entries(codesData).forEach(([code, name]) => {
+                    if (name) state.currencyMeta[code.toUpperCase()] = { name, code: code.toLowerCase() };
+                });
+                
+                createSearchableDropdown('from', DOMElements.fromDropdownWrapper, 'From', state.fromCurrency, false);
+                createSearchableDropdown('to', DOMElements.toDropdownWrapper, 'To', state.toCurrency, false);
+                
+                DOMElements.lastUpdated.textContent = `Last updated: ${new Date(ratesData.date).toLocaleDateString()}`;
+                updateAll();
+                renderTicker();
+
+            } catch (error) {
+                console.error('Error fetching initial data:', error);
+                DOMElements.resultText.textContent = 'Data fetch failed.';
+                DOMElements.resultText.classList.remove('skeleton');
+                DOMElements.rateInfo.textContent = 'Please try again later.';
+            }
+        }
+        
+        async function fetchHistoricalData(base, target) {
+            const promises = Array.from({ length: 30 }, (_, i) => {
+                const date = new Date();
+                date.setDate(date.getDate() - (i + 1));
+                const dateString = date.toISOString().split('T')[0];
+                const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateString}/v1/currencies/${base.toLowerCase()}.json`;
+                return fetch(url)
+                    .then(res => res.ok ? res.json() : null)
+                    .catch(() => null);
+            });
+            const results = (await Promise.all(promises)).filter(r => r && r[base.toLowerCase()] && r[base.toLowerCase()][target.toLowerCase()]);
+            const labels = results.map(r => r.date).reverse();
+            const data = results.map(r => r[base.toLowerCase()][target.toLowerCase()]).reverse();
+            return { labels, data };
+        }
+
+        function createSearchableDropdown(type, wrapper, label, initialValue, triggerUpdate = true) {
+            const dropdownId = `${type}Dropdown`;
+            const selectedId = `${type}Selected`;
+            const searchId = `${type}Search`;
+            const listId = `${type}List`;
+
+            wrapper.innerHTML = `
+                <label for="${searchId}" class="block text-sm font-medium text-slate-400 mb-1">${label}</label>
+                <div class="relative" id="${dropdownId}">
+                    <div id="${selectedId}" tabindex="0" class="flex items-center gap-3 w-full bg-slate-900/70 border-2 border-slate-700 rounded-lg p-3 text-lg font-semibold cursor-pointer"></div>
+                    <div class="custom-dropdown-list absolute z-10 w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        <input type="text" id="${searchId}" class="w-full bg-slate-900 p-2 sticky top-0 focus:outline-none" placeholder="Search...">
+                        <ul id="${listId}"></ul>
+                    </div>
+                </div>`;
+            
+            const dropdown = document.getElementById(dropdownId);
+            const selectedDiv = document.getElementById(selectedId);
+            const searchInput = document.getElementById(searchId);
+            const listUl = document.getElementById(listId);
+            
+            const updateSelected = (code, shouldUpdateAll = true) => {
+                if (type === 'from') state.fromCurrency = code; else state.toCurrency = code;
+                selectedDiv.innerHTML = `<span>${code}</span>`;
+                if (shouldUpdateAll) {
+                    updateAll();
+                }
+            };
+            
+            const renderList = (filter = '') => {
+                listUl.innerHTML = '';
+                const filteredCodes = Object.keys(state.currencyMeta).sort().filter(code => {
+                    const meta = state.currencyMeta[code];
+                    const searchTerm = filter.toLowerCase();
+                    return code.toLowerCase().includes(searchTerm) || meta.name.toLowerCase().includes(searchTerm);
+                });
+
+                filteredCodes.forEach(code => {
+                    const li = document.createElement('li');
+                    li.className = 'p-2 hover:bg-slate-700 cursor-pointer text-sm';
+                    li.textContent = `${code} - ${state.currencyMeta[code].name}`;
+                    li.onmousedown = (e) => {
+                        e.preventDefault();
+                        updateSelected(code, true);
+                        dropdown.querySelector('.custom-dropdown-list').style.display = 'none';
+                    };
+                    listUl.appendChild(li);
+                });
+            };
+
+            selectedDiv.addEventListener('click', () => {
+                const list = dropdown.querySelector('.custom-dropdown-list');
+                const isVisible = list.style.display === 'block';
+                document.querySelectorAll('.custom-dropdown-list').forEach(l => l.style.display = 'none');
+                list.style.display = isVisible ? 'none' : 'block';
+                if(!isVisible) {
+                    searchInput.value = '';
+                    searchInput.focus();
+                    renderList();
+                }
+            });
+            searchInput.addEventListener('input', () => renderList(searchInput.value));
+            document.addEventListener('click', (e) => {
+                if (!dropdown.contains(e.target)) {
+                    dropdown.querySelector('.custom-dropdown-list').style.display = 'none';
+                }
+            });
+            
+            updateSelected(initialValue, triggerUpdate);
+        }
+
+        function convertCurrency() {
+            const amount = parseFloat(DOMElements.amountInput.value.replace(/,/g, '')) || 0;
+            const from = state.fromCurrency;
+            const to = state.toCurrency;
+            if (!from || !to || !state.currencyRates[from.toLowerCase()] || !state.currencyRates[to.toLowerCase()]) return;
+            DOMElements.resultText.classList.remove('skeleton');
+            DOMElements.rateInfo.classList.remove('skeleton');
+            const fromRate = state.currencyRates[from.toLowerCase()];
+            const toRate = state.currencyRates[to.toLowerCase()];
+            const convertedAmount = (amount / fromRate) * toRate;
+            DOMElements.resultText.textContent = `${formatNumber(convertedAmount.toFixed(2))} ${to}`;
+            const singleUnitRate = (1 / fromRate) * toRate;
+            DOMElements.rateInfo.innerHTML = `1 ${from} = ${singleUnitRate.toFixed(4)} ${to}`;
+        }
+
+        async function renderHistoricalChart() {
+            if (state.historicalChart) {
+                state.historicalChart.destroy();
+            }
+            DOMElements.chartTitle.textContent = `${state.fromCurrency} to ${state.toCurrency} - Last 30 Days`;
+            const ctx = DOMElements.historicalChartCanvas.getContext('2d');
+            
+            const { labels, data } = await fetchHistoricalData(state.fromCurrency, state.toCurrency);
+            
+            let chartOptions = getChartOptions();
+
+            if (data && data.length > 1) {
+                const validData = data.filter(v => v !== null && !isNaN(v));
+                if (validData.length > 1) {
+                    const dataMin = Math.min(...validData);
+                    const dataMax = Math.max(...validData);
+                    const padding = (dataMax - dataMin) * 0.1;
+                    
+                    chartOptions.scales.y.min = dataMin - padding;
+                    chartOptions.scales.y.max = dataMax + padding;
+                }
+            }
+
+            state.historicalChart = new Chart(ctx, { 
+                type: 'line', 
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Exchange Rate', 
+                        data: data, 
+                        borderColor: '#22d3ee', 
+                        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                        tension: 0.3, 
+                        fill: true, 
+                        pointRadius: 0
+                    }]
+                },
+                options: chartOptions 
+            });
+        }
+
+        function renderTicker() {
+            const majorPairs = ['EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'INR'];
+            let tickerHTML = '';
+            majorPairs.forEach(pair => {
+                const rate = state.currencyRates[pair.toLowerCase()];
+                if(rate) tickerHTML += `<span class="mx-4">${pair}/USD <span class="${rate > 1 ? 'text-green-400' : 'text-red-400'}">${rate.toFixed(4)}</span></span>`;
+            });
+            DOMElements.ticker.innerHTML = tickerHTML.repeat(4);
+        }
+
+        function renderFavorites() {
+            DOMElements.favoritesContainer.innerHTML = '';
+            if (state.favorites.length === 0) {
+                 DOMElements.favoritesContainer.innerHTML = `<p class="text-slate-400 text-sm">Use 'Manage' to add currencies to your watchlist.</p>`;
+                 return;
+            }
+            const from = state.fromCurrency;
+            const fromRate = state.currencyRates[from.toLowerCase()];
+            if (!fromRate) return;
+
+            state.favorites.forEach(fav => {
+                const toRate = state.currencyRates[fav.toLowerCase()];
+                if (!toRate) return;
+                const rate = (1 / fromRate) * toRate;
+                const favEl = document.createElement('div');
+                favEl.className = 'quick-convert-item flex justify-between items-center p-2 rounded-lg hover:bg-slate-700/50 transition-colors fade-in';
+                favEl.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <span class="font-semibold">${fav}</span>
+                    </div>
+                    <div class="relative text-right">
+                       <span class="quick-convert-rate font-mono">${rate.toFixed(4)}</span>
+                       <div class="quick-convert-input absolute top-1/2 right-0 -translate-y-1/2">
+                           <input type="text" class="bg-slate-900/70 border-2 border-slate-600 rounded-md w-32 text-right p-1 text-sm" placeholder="1.00 ${from}" data-rate="${rate}">
+                       </div>
+                    </div>`;
+                DOMElements.favoritesContainer.appendChild(favEl);
+            });
+        }
+        
+        function renderFavoritesList(filter = '') {
+            DOMElements.favoritesList.innerHTML = '';
+            const filteredCodes = Object.keys(state.currencyMeta).sort().filter(code => {
+                const meta = state.currencyMeta[code];
+                const searchTerm = filter.toLowerCase();
+                return code.toLowerCase().includes(searchTerm) || meta.name.toLowerCase().includes(searchTerm);
+            });
+
+            filteredCodes.forEach(code => {
+                const isFavorite = state.favorites.includes(code);
+                const item = document.createElement('div');
+                item.className = 'flex justify-between items-center p-2 rounded-lg hover:bg-slate-700/50 cursor-pointer';
+                item.innerHTML = `
+                    <span class="text-sm">${code} - ${state.currencyMeta[code].name}</span>
+                    <button class="favorite-star text-2xl ${isFavorite ? 'active' : ''}" data-code="${code}">★</button>`;
+                item.onclick = (e) => {
+                    if (e.target.tagName !== 'BUTTON') e.currentTarget.querySelector('button').click();
+                };
+                item.querySelector('button').onclick = () => toggleFavorite(code);
+                DOMElements.favoritesList.appendChild(item);
+            });
+        }
+        
+        function toggleFavorite(code) {
+            const index = state.favorites.indexOf(code);
+            if (index > -1) state.favorites.splice(index, 1);
+            else state.favorites.push(code);
+            localStorage.setItem('currencyFavorites_v2', JSON.stringify(state.favorites));
+            renderFavoritesList(DOMElements.favoritesSearch.value);
+            renderFavorites();
+        }
+
+        function updateAll() {
+            convertCurrency();
+            renderFavorites();
+            renderHistoricalChart();
+        }
+        
+        function formatNumber(numStr) {
+            const num = parseFloat(String(numStr).replace(/,/g, ''));
+            return isNaN(num) ? '' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(num);
+        }
+
+        function getChartOptions() {
+             return {
+                responsive: true, maintainAspectRatio: false,
+                scales: { 
+                    y: { 
+                        ticks: { color: '#94a3b8' }, 
+                        grid: { color: 'rgba(51, 65, 85, 0.5)' } 
+                    }, 
+                    x: { 
+                        ticks: { color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, 
+                        grid: { display: false } 
+                    } 
+                },
+                plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e293b' } }, 
+                interaction: { intersect: false, mode: 'index' }
+            };
+        }
+
+        function setupEventListeners() {
+            DOMElements.amountInput.addEventListener('input', e => {
+                e.target.value = formatNumber(e.target.value);
+                convertCurrency();
+            });
+            DOMElements.swapButton.addEventListener('click', () => {
+                const fromVal = state.fromCurrency;
+                const toVal = state.toCurrency;
+                createSearchableDropdown('from', DOMElements.fromDropdownWrapper, 'From', toVal, false);
+                createSearchableDropdown('to', DOMElements.toDropdownWrapper, 'To', fromVal, false);
+                updateAll();
+            });
+            DOMElements.editFavoritesBtn.addEventListener('click', () => {
+                DOMElements.favoritesModal.classList.remove('hidden');
+                renderFavoritesList();
+            });
+            DOMElements.closeFavoritesModal.addEventListener('click', () => DOMElements.favoritesModal.classList.add('hidden'));
+            DOMElements.favoritesSearch.addEventListener('input', () => renderFavoritesList(DOMElements.favoritesSearch.value));
+            
+            DOMElements.favoritesContainer.addEventListener('input', e => {
+                if(e.target.classList.contains('quick-convert-input')) {
+                    const input = e.target;
+                    const rate = parseFloat(input.dataset.rate);
+                    const amount = parseFloat(input.value.replace(/,/g, '')) || 0;
+                    const result = (amount / rate).toFixed(2);
+                    const fromCurrency = state.fromCurrency;
+                    input.value = `${formatNumber(input.value)} ${input.placeholder.split(' ')[1]} = ${formatNumber(result)} ${fromCurrency}`;
+                }
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            fetchInitialData();
+        });
+    </script>
+</body>
+</html>
+
